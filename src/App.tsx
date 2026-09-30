@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Play,
   RotateCcw,
@@ -21,9 +21,20 @@ import {
   ArrowRight,
   Download,
   SlidersHorizontal,
-  ChevronDown,
-  ChevronUp,
-  HelpCircle
+  Table as TableIcon,
+  LayoutDashboard,
+  FileText,
+  Presentation,
+  Compass,
+  Search,
+  Filter,
+  Palette,
+  Eye,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  Zap,
+  Layers
 } from 'lucide-react';
 
 interface ExecutionLog {
@@ -51,6 +62,20 @@ interface ContextInfo {
   createdAt: number;
   status: 'ready' | 'busy' | 'restarting';
   executionCount: number;
+}
+
+interface RuntimeDecision {
+  chosenLanguage: 'javascript' | 'python';
+  confidence: number;
+  reasoning: string;
+  criteriaAnalysis: {
+    dataTransformation: string;
+    computationalPerformance: string;
+    ecosystemFit: string;
+  };
+  recommendedLibraries: string[];
+  generatedScript: string;
+  suggestedPresentation?: string;
 }
 
 const TEMPLATES = [
@@ -250,6 +275,29 @@ plt.show()
   },
 ];
 
+const CONDITION_PRESETS = [
+  {
+    name: 'Matrix & Rolling Volatility',
+    condition: 'Heavy statistical calculations with rolling window variance, NumPy arrays, and moving average smoothing',
+  },
+  {
+    name: 'Event-Driven JSON Aggregation',
+    condition: 'Fast in-memory JSON payload transformation, array filter/reduce mapping, and sub-millisecond execution',
+  },
+  {
+    name: 'Multi-Group Variance & Boxplot',
+    condition: 'Scientific distribution with interquartile ranges (IQR), medians, whiskers, and outlier detection',
+  },
+  {
+    name: 'Customer Cohort LTV & Churn Ratios',
+    condition: 'Segmenting customer accounts into proportional cohorts with percentage shares and interactive distribution',
+  },
+  {
+    name: 'High-Frequency Stock Trend Analysis',
+    condition: 'Time series financial data with daily closing prices, volume weights, and simple moving averages',
+  },
+];
+
 export default function App() {
   const [code, setCode] = useState(TEMPLATES[0].code);
   const [language, setLanguage] = useState<'javascript' | 'python'>('javascript');
@@ -259,15 +307,25 @@ export default function App() {
   const [logs, setLogs] = useState<ExecutionLog[]>([]);
   const [chartData, setChartData] = useState<ExtractedChartData | null>(null);
   const [rawResult, setRawResult] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'chart' | 'console' | 'raw'>('chart');
+  const [activeTab, setActiveTab] = useState<'presentation' | 'console' | 'raw'>('presentation');
   const [execDuration, setExecDuration] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [currentError, setCurrentError] = useState<string | null>(null);
+
+  // Presentation Customization Options
+  const [presentationMode, setPresentationMode] = useState<'chart' | 'table' | 'kpi' | 'report' | 'story'>('chart');
+  const [colorPalette, setColorPalette] = useState<'indigo' | 'emerald' | 'sunset' | 'neon' | 'monochrome'>('indigo');
+  const [barOrientation, setBarOrientation] = useState<'vertical' | 'horizontal'>('vertical');
+  const [showDataLabels, setShowDataLabels] = useState(true);
+  const [sortOrder, setSortOrder] = useState<'default' | 'asc' | 'desc'>('default');
+  const [tableSearch, setTableSearch] = useState('');
+  const [storySlide, setStorySlide] = useState(0);
 
   // Modals & Panels
   const [showContextModal, setShowContextModal] = useState(false);
   const [showApiModal, setShowApiModal] = useState(false);
   const [showAgentPanel, setShowAgentPanel] = useState(false);
+  const [showDeciderModal, setShowDeciderModal] = useState(false);
 
   // Coding Agent State
   const [agentPrompt, setAgentPrompt] = useState('');
@@ -275,6 +333,11 @@ export default function App() {
   const [suggestedChartType, setSuggestedChartType] = useState<string | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentStep, setAgentStep] = useState<'idle' | 'refining' | 'refined' | 'generating'>('idle');
+
+  // Condition Decider State
+  const [conditionInput, setConditionInput] = useState('');
+  const [deciderLoading, setDeciderLoading] = useState(false);
+  const [decisionResult, setDecisionResult] = useState<RuntimeDecision | null>(null);
 
   // Bug Fixer State
   const [fixLoading, setFixLoading] = useState(false);
@@ -327,7 +390,7 @@ export default function App() {
       } else {
         setCurrentError(null);
         if (data.chart) {
-          setActiveTab('chart');
+          setActiveTab('presentation');
         } else {
           setActiveTab('console');
         }
@@ -392,7 +455,6 @@ export default function App() {
         setShowAgentPanel(false);
         setAgentStep('idle');
         setRefinedPrompt(null);
-        // Automatically execute generated code
         handleExecute(data.code, language);
       }
     } catch (err: any) {
@@ -402,7 +464,38 @@ export default function App() {
     }
   };
 
-  // AI Agent: 3. Fix Code & Syntax Bugs
+  // Condition & Runtime Decider
+  const handleDecideRuntime = async (overrideCondition?: string) => {
+    const condition = overrideCondition || conditionInput;
+    if (!condition.trim()) return;
+
+    setDeciderLoading(true);
+    try {
+      const res = await fetch('/api/agent/decide-runtime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ condition }),
+      });
+      const data = await res.json();
+      setDecisionResult(data);
+    } catch (err) {
+      console.error('Runtime decision failed', err);
+    } finally {
+      setDeciderLoading(false);
+    }
+  };
+
+  const handleApplyDecision = () => {
+    if (!decisionResult) return;
+    const lang = decisionResult.chosenLanguage;
+    setLanguage(lang);
+    setSelectedContextId(lang === 'python' ? 'context-python-default' : 'context-js-default');
+    setCode(decisionResult.generatedScript);
+    setShowDeciderModal(false);
+    handleExecute(decisionResult.generatedScript, lang);
+  };
+
+  // AI Bug Fixer
   const handleFixCodeWithAi = async () => {
     setFixLoading(true);
     try {
@@ -421,7 +514,6 @@ export default function App() {
         setCode(data.fixedCode);
         setFixExplanation(data.rootCause ? `${data.rootCause}. Fix: ${data.fixSummary}` : data.fixSummary);
         setCurrentError(null);
-        // Execute the fixed code immediately
         await handleExecute(data.fixedCode, language);
       }
     } catch (err) {
@@ -464,40 +556,207 @@ export default function App() {
     }
   };
 
-  // Render SVG Chart based on extracted chart type
-  const renderChart = () => {
+  // Export Data to CSV
+  const handleExportCsv = () => {
+    if (!chartData || !chartData.elements) return;
+    const rows: string[] = ['Label,Value,Group'];
+    chartData.elements.forEach((item: any) => {
+      const label = item.label || '';
+      const val = item.value !== undefined ? item.value : (item.median !== undefined ? item.median : '');
+      const group = item.group || '';
+      rows.push(`"${label}",${val},"${group}"`);
+    });
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(chartData.title || 'extracted_data').replace(/\s+/g, '_')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Color Palette Definitions
+  const paletteColors = useMemo(() => {
+    switch (colorPalette) {
+      case 'emerald':
+        return {
+          primary: '#10b981',
+          secondary: '#14b8a6',
+          accent: '#06b6d4',
+          series: ['#10b981', '#14b8a6', '#06b6d4', '#84cc16'],
+          barClasses: ['bg-emerald-500 hover:bg-emerald-400', 'bg-teal-500 hover:bg-teal-400', 'bg-cyan-500 hover:bg-cyan-400', 'bg-lime-500 hover:bg-lime-400'],
+        };
+      case 'sunset':
+        return {
+          primary: '#f97316',
+          secondary: '#f43f5e',
+          accent: '#fbbf24',
+          series: ['#f97316', '#f43f5e', '#fbbf24', '#e11d48'],
+          barClasses: ['bg-orange-500 hover:bg-orange-400', 'bg-rose-500 hover:bg-rose-400', 'bg-amber-500 hover:bg-amber-400', 'bg-red-500 hover:bg-red-400'],
+        };
+      case 'neon':
+        return {
+          primary: '#d946ef',
+          secondary: '#06b6d4',
+          accent: '#84cc16',
+          series: ['#d946ef', '#06b6d4', '#84cc16', '#facc15'],
+          barClasses: ['bg-fuchsia-500 hover:bg-fuchsia-400', 'bg-cyan-500 hover:bg-cyan-400', 'bg-lime-500 hover:bg-lime-400', 'bg-yellow-400 hover:bg-yellow-300'],
+        };
+      case 'monochrome':
+        return {
+          primary: '#94a3b8',
+          secondary: '#cbd5e1',
+          accent: '#f8fafc',
+          series: ['#94a3b8', '#64748b', '#cbd5e1', '#e2e8f0'],
+          barClasses: ['bg-slate-400 hover:bg-slate-300', 'bg-slate-500 hover:bg-slate-400', 'bg-slate-300 hover:bg-slate-200', 'bg-slate-600 hover:bg-slate-500'],
+        };
+      default: // indigo
+        return {
+          primary: '#6366f1',
+          secondary: '#06b6d4',
+          accent: '#10b981',
+          series: ['#6366f1', '#06b6d4', '#10b981', '#f59e0b'],
+          barClasses: ['bg-indigo-500 hover:bg-indigo-400', 'bg-cyan-500 hover:bg-cyan-400', 'bg-emerald-500 hover:bg-emerald-400', 'bg-amber-500 hover:bg-amber-400'],
+        };
+    }
+  }, [colorPalette]);
+
+  // Sorted and Filtered Elements
+  const processedElements = useMemo(() => {
+    if (!chartData || !Array.isArray(chartData.elements)) return [];
+    let list = [...chartData.elements];
+
+    // Filter by table search if applicable
+    if (tableSearch.trim()) {
+      const q = tableSearch.toLowerCase();
+      list = list.filter((item: any) =>
+        (item.label && String(item.label).toLowerCase().includes(q)) ||
+        (item.group && String(item.group).toLowerCase().includes(q))
+      );
+    }
+
+    // Sort order
+    if (sortOrder === 'asc') {
+      list.sort((a, b) => (Number(a.value || a.median || 0) - Number(b.value || b.median || 0)));
+    } else if (sortOrder === 'desc') {
+      list.sort((a, b) => (Number(b.value || b.median || 0) - Number(a.value || a.median || 0)));
+    }
+
+    return list;
+  }, [chartData, sortOrder, tableSearch]);
+
+  // Statistical aggregates for KPIs
+  const stats = useMemo(() => {
+    if (!chartData || !Array.isArray(chartData.elements) || chartData.elements.length === 0) {
+      return null;
+    }
+    const elements = chartData.elements;
+    let numericValues: number[] = [];
+
+    if (chartData.type === 'bar' || chartData.type === 'pie') {
+      numericValues = elements.map(e => Number(e.value)).filter(n => !isNaN(n));
+    } else if (chartData.type === 'box_and_whisker') {
+      numericValues = elements.map(e => Number(e.median)).filter(n => !isNaN(n));
+    } else if (chartData.type === 'line' || chartData.type === 'scatter') {
+      elements.forEach(s => {
+        if (Array.isArray(s.points)) {
+          s.points.forEach((p: any) => {
+            const val = Number(p[1]);
+            if (!isNaN(val)) numericValues.push(val);
+          });
+        }
+      });
+    }
+
+    if (numericValues.length === 0) return null;
+
+    const sum = numericValues.reduce((acc, v) => acc + v, 0);
+    const mean = sum / numericValues.length;
+    const sorted = [...numericValues].sort((a, b) => a - b);
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+    const peakItem = elements.find((e: any) => Number(e.value || e.median) === max);
+
+    return {
+      sum,
+      mean: Number(mean.toFixed(2)),
+      median: Number(median.toFixed(2)),
+      min,
+      max,
+      count: numericValues.length,
+      peakLabel: peakItem?.label || 'Peak Element',
+      range: max - min,
+    };
+  }, [chartData]);
+
+  // Mode 1: Interactive Graphic Chart Renderer
+  const renderChartGraphic = () => {
     if (!chartData) {
       return (
         <div className="h-72 flex flex-col items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-xl bg-slate-900/40">
           <BarChart3 className="w-10 h-10 mb-2 stroke-1 text-slate-600" />
           <p className="text-sm font-medium">No chart data extracted in this run</p>
-          <p className="text-xs text-slate-600 mt-1">Use the AI Coding Agent or preset templates to generate interactive charts</p>
+          <p className="text-xs text-slate-600 mt-1">Use the Condition Decider, Coding Agent, or preset templates to execute</p>
         </div>
       );
     }
 
     // Bar Chart
     if (chartData.type === 'bar') {
-      const elements = chartData.elements || [];
+      const elements = processedElements;
       const values = elements.map(e => Number(e.value) || 0);
       const maxValue = Math.max(...values, 100);
       const groups = Array.from(new Set(elements.map(e => e.group || 'Default')));
-      const groupColors: Record<string, string> = {
-        Revenue: 'bg-emerald-500 hover:bg-emerald-400',
-        Expenses: 'bg-rose-500 hover:bg-rose-400',
-        Sales: 'bg-indigo-500 hover:bg-indigo-400',
-        Default: 'bg-blue-500 hover:bg-blue-400',
-      };
 
+      if (barOrientation === 'horizontal') {
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-base font-semibold text-slate-200">{chartData.title || 'Bar Chart'}</h4>
+              <span className="text-xs text-slate-500">{elements.length} data points (Horizontal)</span>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-6 space-y-3">
+              {elements.map((item, idx) => {
+                const widthPercent = Math.max(8, (Number(item.value) / maxValue) * 100);
+                const colorClass = paletteColors.barClasses[idx % paletteColors.barClasses.length];
+                return (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex justify-between text-xs font-mono">
+                      <span className="text-slate-300 font-medium">{item.label}</span>
+                      <span className="text-slate-400 font-bold">{item.value} {chartData.y_unit || ''}</span>
+                    </div>
+                    <div className="w-full bg-slate-800/80 rounded-full h-4 overflow-hidden p-0.5 border border-slate-700/50">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
+                        style={{ width: `${widthPercent}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex justify-between text-[11px] text-slate-500 pt-2 border-t border-slate-800">
+                <span>0</span>
+                <span>Scale: {maxValue} {chartData.y_unit || 'Units'}</span>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // Vertical Columns
       return (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="text-base font-semibold text-slate-200">{chartData.title || 'Bar Chart'}</h4>
             {groups.length > 1 && (
               <div className="flex items-center gap-3 text-xs">
-                {groups.map(grp => (
+                {groups.map((grp, gIdx) => (
                   <span key={grp} className="flex items-center gap-1.5">
-                    <span className={`w-3 h-3 rounded ${groupColors[grp] || 'bg-cyan-500'}`}></span>
+                    <span className="w-3 h-3 rounded" style={{ backgroundColor: paletteColors.series[gIdx % paletteColors.series.length] }}></span>
                     <span className="text-slate-400">{grp}</span>
                   </span>
                 ))}
@@ -515,14 +774,19 @@ export default function App() {
 
               {elements.map((item, idx) => {
                 const heightPercent = Math.max(8, (Number(item.value) / maxValue) * 100);
-                const colorClass = groupColors[item.group] || 'bg-cyan-500 hover:bg-cyan-400';
+                const colorClass = paletteColors.barClasses[idx % paletteColors.barClasses.length];
                 return (
                   <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group relative">
                     <div
-                      className={`w-full max-w-[42px] rounded-t-md transition-all duration-300 ${colorClass} relative`}
+                      className={`w-full max-w-[44px] rounded-t-md transition-all duration-300 ${colorClass} relative`}
                       style={{ height: `${heightPercent}%` }}
                     >
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-950 text-slate-200 text-xs px-2 py-0.5 rounded shadow border border-slate-700 whitespace-nowrap z-10 pointer-events-none">
+                      {showDataLabels && (
+                        <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-mono text-slate-300 font-bold">
+                          {item.value}
+                        </span>
+                      )}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-9 left-1/2 -translate-x-1/2 bg-slate-950 text-slate-200 text-xs px-2 py-0.5 rounded shadow border border-slate-700 whitespace-nowrap z-10 pointer-events-none">
                         {item.group ? `${item.group}: ` : ''}{item.value} {chartData.y_unit || ''}
                       </div>
                     </div>
@@ -542,7 +806,7 @@ export default function App() {
 
     // Line Chart
     if (chartData.type === 'line') {
-      const elements = chartData.elements || [];
+      const elements = processedElements;
       const allPoints: [number, number][] = [];
       elements.forEach(series => {
         if (Array.isArray(series.points)) {
@@ -559,8 +823,6 @@ export default function App() {
       const rangeX = maxX - minX || 1;
       const rangeY = maxY - minY || 1;
 
-      const colors = ['#06b6d4', '#10b981', '#f59e0b', '#ec4899'];
-
       return (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -568,7 +830,7 @@ export default function App() {
             <div className="flex items-center gap-3 text-xs">
               {elements.map((s, idx) => (
                 <span key={idx} className="flex items-center gap-1.5">
-                  <span className="w-3 h-0.5 rounded" style={{ backgroundColor: colors[idx % colors.length] }}></span>
+                  <span className="w-3 h-0.5 rounded" style={{ backgroundColor: paletteColors.series[idx % paletteColors.series.length] }}></span>
                   <span className="text-slate-400">{s.label || `Series ${idx + 1}`}</span>
                 </span>
               ))}
@@ -585,7 +847,7 @@ export default function App() {
                 {elements.map((series, sIdx) => {
                   const pts: [number, number][] = series.points || [];
                   if (pts.length < 2) return null;
-                  const color = colors[sIdx % colors.length];
+                  const color = paletteColors.series[sIdx % paletteColors.series.length];
 
                   const pathStr = pts
                     .map((p, pIdx) => {
@@ -602,7 +864,14 @@ export default function App() {
                         const x = ((p[0] - minX) / rangeX) * 480 + 10;
                         const y = 190 - ((p[1] - minY) / rangeY) * 170;
                         return (
-                          <circle key={pIdx} cx={x} cy={y} r="4" fill={color} stroke="#0f172a" strokeWidth="2" />
+                          <g key={pIdx}>
+                            <circle cx={x} cy={y} r="4" fill={color} stroke="#0f172a" strokeWidth="2" />
+                            {showDataLabels && (
+                              <text x={x} y={y - 8} fill="#94a3b8" fontSize="9" textAnchor="middle" fontFamily="monospace">
+                                {p[1]}
+                              </text>
+                            )}
+                          </g>
                         );
                       })}
                     </g>
@@ -619,9 +888,104 @@ export default function App() {
       );
     }
 
+    // Pie Chart
+    if (chartData.type === 'pie') {
+      const elements = processedElements;
+      const total = elements.reduce((acc, el) => acc + (Number(el.value) || 0), 0) || 1;
+      let cumulativePercent = 0;
+
+      return (
+        <div className="space-y-4">
+          <h4 className="text-base font-semibold text-slate-200">{chartData.title || 'Pie Chart'}</h4>
+          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+            <div className="flex justify-center">
+              <svg viewBox="0 0 32 32" className="w-52 h-52 -rotate-90">
+                {elements.map((slice, idx) => {
+                  const val = Number(slice.value) || 0;
+                  const percent = (val / total) * 100;
+                  const strokeDasharray = `${percent} ${100 - percent}`;
+                  const strokeDashoffset = -cumulativePercent;
+                  cumulativePercent += percent;
+
+                  return (
+                    <circle
+                      key={idx}
+                      r="16"
+                      cx="16"
+                      cy="16"
+                      fill="transparent"
+                      stroke={paletteColors.series[idx % paletteColors.series.length]}
+                      strokeWidth="32"
+                      strokeDasharray={strokeDasharray}
+                      strokeDashoffset={strokeDashoffset}
+                      className="transition-all hover:opacity-85"
+                    />
+                  );
+                })}
+              </svg>
+            </div>
+
+            <div className="space-y-3">
+              {elements.map((item, idx) => {
+                const percent = (((Number(item.value) || 0) / total) * 100).toFixed(1);
+                return (
+                  <div key={idx} className="flex items-center justify-between p-2 rounded bg-slate-800/40 border border-slate-700/40 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: paletteColors.series[idx % paletteColors.series.length] }}></span>
+                      <span className="font-medium text-slate-300">{item.label}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-slate-400">{item.value}</span>
+                      <span className="font-semibold text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded">{percent}%</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Box and Whisker Plot
+    if (chartData.type === 'box_and_whisker') {
+      const elements = processedElements;
+      return (
+        <div className="space-y-4">
+          <h4 className="text-base font-semibold text-slate-200">{chartData.title || 'Box & Whisker Plot'}</h4>
+          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {elements.map((box, idx) => (
+                <div key={idx} className="bg-slate-800/50 border border-slate-700/60 rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between items-center border-b border-slate-700/50 pb-2">
+                    <span className="font-medium text-slate-200 text-sm">{box.label}</span>
+                    <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ backgroundColor: `${paletteColors.primary}25`, color: paletteColors.primary }}>
+                      Median: {box.median}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 pt-1">
+                    <div>Min: <span className="font-mono text-slate-200">{box.min}</span></div>
+                    <div>Max: <span className="font-mono text-slate-200">{box.max}</span></div>
+                    <div>Q1 (25%): <span className="font-mono text-slate-200">{box.first_quartile}</span></div>
+                    <div>Q3 (75%): <span className="font-mono text-slate-200">{box.third_quartile}</span></div>
+                  </div>
+                  {Array.isArray(box.outliers) && box.outliers.length > 0 && (
+                    <div className="pt-2 text-xs text-rose-400 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      <span>Outliers: {box.outliers.join(', ')}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Scatter Plot
     if (chartData.type === 'scatter') {
-      const elements = chartData.elements || [];
+      const elements = processedElements;
       const allPoints: [number, number][] = [];
       elements.forEach(series => {
         if (Array.isArray(series.points)) {
@@ -638,8 +1002,6 @@ export default function App() {
       const rangeX = maxX - minX || 1;
       const rangeY = maxY - minY || 1;
 
-      const colors = ['#38bdf8', '#fbbf24', '#34d399', '#f43f5e'];
-
       return (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -647,7 +1009,7 @@ export default function App() {
             <div className="flex items-center gap-3 text-xs">
               {elements.map((s, idx) => (
                 <span key={idx} className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colors[idx % colors.length] }}></span>
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: paletteColors.series[idx % paletteColors.series.length] }}></span>
                   <span className="text-slate-400">{s.label || `Cluster ${idx + 1}`}</span>
                 </span>
               ))}
@@ -663,7 +1025,7 @@ export default function App() {
 
                 {elements.map((series, sIdx) => {
                   const pts: [number, number][] = series.points || [];
-                  const color = colors[sIdx % colors.length];
+                  const color = paletteColors.series[sIdx % paletteColors.series.length];
 
                   return (
                     <g key={sIdx}>
@@ -688,119 +1050,334 @@ export default function App() {
                 })}
               </svg>
             </div>
-            <div className="flex justify-between items-center text-xs text-slate-500 mt-2">
-              <span>{chartData.x_label || 'Feature X'}</span>
-              <span>{chartData.y_label || 'Feature Y'}</span>
-            </div>
           </div>
         </div>
       );
     }
 
-    // Pie Chart
-    if (chartData.type === 'pie') {
-      const elements = chartData.elements || [];
-      const total = elements.reduce((acc, el) => acc + (Number(el.value) || 0), 0) || 1;
-      const colors = ['#38bdf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa'];
+    return null;
+  };
 
-      let cumulativePercent = 0;
+  // Mode 2: Rich Data Matrix Table
+  const renderDataTable = () => {
+    if (!chartData || !Array.isArray(chartData.elements)) {
+      return <p className="text-slate-500 text-xs p-6 text-center">No tabular elements to display</p>;
+    }
 
-      return (
-        <div className="space-y-4">
-          <h4 className="text-base font-semibold text-slate-200">{chartData.title || 'Pie Chart'}</h4>
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-            <div className="flex justify-center">
-              <svg viewBox="0 0 32 32" className="w-52 h-52 -rotate-90">
-                {elements.map((slice, idx) => {
-                  const val = Number(slice.value) || 0;
-                  const percent = (val / total) * 100;
-                  const strokeDasharray = `${percent} ${100 - percent}`;
-                  const strokeDashoffset = -cumulativePercent;
-                  cumulativePercent += percent;
+    const elements = processedElements;
 
-                  return (
-                    <circle
-                      key={idx}
-                      r="16"
-                      cx="16"
-                      cy="16"
-                      fill="transparent"
-                      stroke={colors[idx % colors.length]}
-                      strokeWidth="32"
-                      strokeDasharray={strokeDasharray}
-                      strokeDashoffset={strokeDashoffset}
-                      className="transition-all hover:opacity-85"
-                    />
-                  );
-                })}
-              </svg>
-            </div>
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-200">Structured Data Matrix</h4>
+            <p className="text-xs text-slate-400">Extracted schema features and records</p>
+          </div>
+          <button
+            onClick={handleExportCsv}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs border border-slate-700 transition"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </button>
+        </div>
 
-            <div className="space-y-3">
-              {elements.map((item, idx) => {
-                const percent = (((Number(item.value) || 0) / total) * 100).toFixed(1);
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+          <input
+            type="text"
+            value={tableSearch}
+            onChange={(e) => setTableSearch(e.target.value)}
+            placeholder="Search records by label or cohort group..."
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-mono">
+              <tr>
+                <th className="p-3">Index</th>
+                <th className="p-3">Record Label</th>
+                <th className="p-3">Extracted Value</th>
+                <th className="p-3">Classification Group</th>
+                <th className="p-3 text-right">Relative Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-mono">
+              {elements.map((item: any, idx: number) => {
+                const val = item.value !== undefined ? item.value : (item.median !== undefined ? item.median : 'N/A');
+                const isMax = stats && val === stats.max;
+                const isMin = stats && val === stats.min;
+
                 return (
-                  <div key={idx} className="flex items-center justify-between p-2 rounded bg-slate-800/40 border border-slate-700/40 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: colors[idx % colors.length] }}></span>
-                      <span className="font-medium text-slate-300">{item.label}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-slate-400">{item.value}</span>
-                      <span className="font-semibold text-slate-200 bg-slate-800 px-1.5 py-0.5 rounded">{percent}%</span>
-                    </div>
-                  </div>
+                  <tr key={idx} className="hover:bg-slate-800/40 transition">
+                    <td className="p-3 text-slate-500">#{idx + 1}</td>
+                    <td className="p-3 text-slate-200 font-semibold">{item.label || `Point ${idx + 1}`}</td>
+                    <td className="p-3 text-slate-100 font-bold">
+                      {val} {chartData.y_unit || ''}
+                    </td>
+                    <td className="p-3 text-slate-400">{item.group || 'Default'}</td>
+                    <td className="p-3 text-right">
+                      {isMax ? (
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px]">
+                          Max Peak
+                        </span>
+                      ) : isMin ? (
+                        <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px]">
+                          Minimum
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 text-[10px]">Normal</span>
+                      )}
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
-          </div>
+            </tbody>
+          </table>
         </div>
-      );
-    }
+      </div>
+    );
+  };
 
-    // Box and Whisker Plot
-    if (chartData.type === 'box_and_whisker') {
-      const elements = chartData.elements || [];
-      return (
-        <div className="space-y-4">
-          <h4 className="text-base font-semibold text-slate-200">{chartData.title || 'Box & Whisker Plot'}</h4>
-          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {elements.map((box, idx) => (
-                <div key={idx} className="bg-slate-800/50 border border-slate-700/60 rounded-lg p-4 space-y-2">
-                  <div className="flex justify-between items-center border-b border-slate-700/50 pb-2">
-                    <span className="font-medium text-slate-200 text-sm">{box.label}</span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                      Median: {box.median}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 pt-1">
-                    <div>Min: <span className="font-mono text-slate-200">{box.min}</span></div>
-                    <div>Max: <span className="font-mono text-slate-200">{box.max}</span></div>
-                    <div>Q1 (25%): <span className="font-mono text-slate-200">{box.first_quartile}</span></div>
-                    <div>Q3 (75%): <span className="font-mono text-slate-200">{box.third_quartile}</span></div>
-                  </div>
-                  {Array.isArray(box.outliers) && box.outliers.length > 0 && (
-                    <div className="pt-2 text-xs text-rose-400 flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      <span>Outliers: {box.outliers.join(', ')}</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-between items-center text-xs text-slate-500 mt-4">
-              <span>{chartData.x_label || 'Distribution Groups'}</span>
-              <span>{chartData.y_label || 'Scale'}</span>
-            </div>
-          </div>
-        </div>
-      );
+  // Mode 3: Executive KPI & Metrics Dashboard
+  const renderKpiDashboard = () => {
+    if (!stats) {
+      return <p className="text-slate-500 text-xs p-6 text-center">Run code with data points to compute KPIs</p>;
     }
 
     return (
-      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl">
-        <p className="text-sm text-slate-300">Extracted {chartData.type} chart: {chartData.title}</p>
+      <div className="space-y-5">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-200">Executive KPI Dashboard</h4>
+          <p className="text-xs text-slate-400">Statistical aggregation and high-level distribution telemetry</p>
+        </div>
+
+        {/* Metric Cards Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Total Aggregated</span>
+            <div className="text-xl font-bold text-indigo-400 font-mono">
+              {stats.sum.toLocaleString()}
+            </div>
+            <span className="text-[10px] text-slate-500">Across {stats.count} recorded points</span>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Mean Average</span>
+            <div className="text-xl font-bold text-emerald-400 font-mono">
+              {stats.mean.toLocaleString()}
+            </div>
+            <span className="text-[10px] text-slate-500">Normalized expected value</span>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Peak Value</span>
+            <div className="text-xl font-bold text-amber-400 font-mono">
+              {stats.max.toLocaleString()}
+            </div>
+            <span className="text-[10px] text-amber-500/80 truncate block">{stats.peakLabel}</span>
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1">
+            <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Variance Spread</span>
+            <div className="text-xl font-bold text-cyan-400 font-mono">
+              {stats.range.toLocaleString()}
+            </div>
+            <span className="text-[10px] text-slate-500">Min {stats.min} to Max {stats.max}</span>
+          </div>
+        </div>
+
+        {/* Analytical Takeaway Cards */}
+        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
+          <h5 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            Key Analytical Takeaways
+          </h5>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+              <span className="text-slate-400 font-semibold block">Distribution Skew</span>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                Median is <span className="font-mono text-emerald-400">{stats.median}</span> versus mean <span className="font-mono text-emerald-400">{stats.mean}</span>, indicating a balanced dataset with minimal extreme skew.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
+              <span className="text-slate-400 font-semibold block">Top Performing Contributor</span>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                <span className="font-semibold text-amber-300">{stats.peakLabel}</span> represents the maximum peak with <span className="font-mono text-amber-400">{stats.max} {chartData?.y_unit || ''}</span>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Mode 4: Executive Narrative Report
+  const renderExecutiveReport = () => {
+    if (!chartData) {
+      return <p className="text-slate-500 text-xs p-6 text-center">Execute code to compile report</p>;
+    }
+
+    const reportMarkdown = `# ${chartData.title || 'Data Analysis Report'}
+Generated on: ${new Date().toLocaleDateString()} via E2B Code Interpreter
+
+## 1. Executive Summary
+This report analyzes extracted telemetry for "${chartData.title}". Total elements evaluated: ${chartData.elements?.length || 0}. 
+
+## 2. Quantitative Key Indicators
+- Chart Type: ${chartData.type}
+- Primary Dimension (X-Axis): ${chartData.x_label || 'Default Dimension'} ${chartData.x_unit ? `(${chartData.x_unit})` : ''}
+- Metric Dimension (Y-Axis): ${chartData.y_label || 'Values'} ${chartData.y_unit ? `(${chartData.y_unit})` : ''}
+${stats ? `- Total Aggregation: ${stats.sum}\n- Mean Average: ${stats.mean}\n- Peak Value: ${stats.max} (${stats.peakLabel})\n- Minimum: ${stats.min}` : ''}
+
+## 3. Sandboxed Execution Methodology
+Executed in isolated Node V8 / Python environment with automatic chart feature extraction.
+`;
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-200">Executive Narrative Report</h4>
+            <p className="text-xs text-slate-400">Formatted documentation ready for executive review</p>
+          </div>
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(reportMarkdown);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow transition"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            {copied ? 'Copied Report!' : 'Copy Markdown Report'}
+          </button>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 font-mono text-xs text-slate-300 space-y-4 leading-relaxed whitespace-pre-wrap">
+          {reportMarkdown}
+        </div>
+      </div>
+    );
+  };
+
+  // Mode 5: Interactive Story Presentation Deck
+  const renderStoryDeck = () => {
+    if (!chartData) {
+      return <p className="text-slate-500 text-xs p-6 text-center">Execute code to generate presentation deck</p>;
+    }
+
+    const slides = [
+      {
+        title: 'Executive Briefing & Strategic Scope',
+        tag: 'Slide 1 of 3: Problem Statement',
+        content: (
+          <div className="space-y-4">
+            <h3 className="text-lg font-bold text-slate-100">{chartData.title || 'Analytical Investigation'}</h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              This analysis evaluates key performance patterns and distributional characteristics across {chartData.elements?.length || 0} extracted dimensions.
+            </p>
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Primary Metric</span>
+                <span className="text-sm font-semibold text-indigo-400">{chartData.y_label || 'Value Output'}</span>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                <span className="text-[10px] text-slate-500 uppercase block font-semibold">Dimension Category</span>
+                <span className="text-sm font-semibold text-emerald-400">{chartData.x_label || 'Categories'}</span>
+              </div>
+            </div>
+          </div>
+        ),
+      },
+      {
+        title: 'Empirical Evidence & Extracted Visual Findings',
+        tag: 'Slide 2 of 3: Data Evidence',
+        content: (
+          <div className="space-y-4">
+            <div className="h-44 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+              {renderChartGraphic()}
+            </div>
+            {stats && (
+              <p className="text-xs text-slate-300 font-mono">
+                Key takeaway: Mean performance tracks at <strong className="text-emerald-400">{stats.mean}</strong>, with peak output observed at <strong className="text-amber-400">{stats.max}</strong>.
+              </p>
+            )}
+          </div>
+        ),
+      },
+      {
+        title: 'Strategic Synthesis & Next Actions',
+        tag: 'Slide 3 of 3: Actionable Recommendations',
+        content: (
+          <div className="space-y-3">
+            <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/30 text-xs text-emerald-300">
+              <strong>1. Resource Allocation:</strong> Prioritize high-yield cohorts matching the peak threshold ({stats?.max || 'top'} units).
+            </div>
+            <div className="p-3 rounded-lg bg-indigo-950/20 border border-indigo-500/30 text-xs text-indigo-300">
+              <strong>2. Volatility Management:</strong> Normalize variance spread across baseline tiers.
+            </div>
+            <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/30 text-xs text-amber-300">
+              <strong>3. Continuous Telemetry:</strong> Deploy recurring E2B sandbox interpreters to track period-over-period drift.
+            </div>
+          </div>
+        ),
+      },
+    ];
+
+    const currentSlide = slides[storySlide];
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-200">Presentation Deck Mode</h4>
+            <span className="text-xs text-indigo-400 font-mono">{currentSlide.tag}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setStorySlide(s => Math.max(0, s - 1))}
+              disabled={storySlide === 0}
+              className="p-1.5 rounded-lg bg-slate-800 disabled:opacity-40 text-slate-200 hover:bg-slate-700 transition"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-mono text-slate-400">{storySlide + 1} / {slides.length}</span>
+            <button
+              onClick={() => setStorySlide(s => Math.min(slides.length - 1, s + 1))}
+              disabled={storySlide === slides.length - 1}
+              className="p-1.5 rounded-lg bg-slate-800 disabled:opacity-40 text-slate-200 hover:bg-slate-700 transition"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-2xl min-h-[280px] flex flex-col justify-between">
+          <div className="space-y-3">
+            <h3 className="text-base font-bold text-slate-100 border-b border-slate-800 pb-2">
+              {currentSlide.title}
+            </h3>
+            {currentSlide.content}
+          </div>
+
+          <div className="flex justify-center gap-2 pt-4 border-t border-slate-800/80">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setStorySlide(i)}
+                className={`w-2.5 h-2.5 rounded-full transition ${
+                  storySlide === i ? 'bg-indigo-500 scale-125' : 'bg-slate-700 hover:bg-slate-600'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     );
   };
@@ -820,29 +1397,37 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <span className="font-bold text-slate-100 text-base tracking-tight">E2B Code Interpreter</span>
                 <span className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                  Data Extractor + AI Agent
+                  Data Extractor &amp; Decider
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Sandbox execution &amp; automated chart data extraction</p>
+              <p className="text-xs text-slate-400">Condition-driven runtime selector &amp; multi-format presentation engine</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Condition Runtime Decider Button */}
+            <button
+              onClick={() => setShowDeciderModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-lg shadow-md shadow-emerald-500/20 transition"
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>Condition Decider</span>
+            </button>
+
             {/* AI Coding Agent Button */}
             <button
               onClick={() => setShowAgentPanel(!showAgentPanel)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-lg shadow-md shadow-indigo-500/20 transition"
             >
               <Sparkles className="w-3.5 h-3.5 fill-current" />
-              <span>AI Coding Agent</span>
+              <span>AI Agent</span>
             </button>
 
-            {/* Context Indicator */}
+            {/* Context Status */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span className="text-slate-400">Context:</span>
               <span className="font-mono text-slate-200">{activeContext?.language || language}</span>
-              <span className="text-slate-500 text-[10px]">({activeContext?.executionCount || 0} runs)</span>
             </div>
 
             <button
@@ -850,21 +1435,12 @@ export default function App() {
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition"
             >
               <Cpu className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Contexts</span>
-            </button>
-
-            <button
-              onClick={() => setShowApiModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">API</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* AI Coding Agent Slide-down Drawer */}
+      {/* AI Coding Agent Drawer */}
       {showAgentPanel && (
         <div className="bg-slate-900 border-b border-indigo-500/30 p-4 transition-all animate-fadeIn">
           <div className="max-w-7xl mx-auto space-y-3">
@@ -879,13 +1455,9 @@ export default function App() {
                 onClick={() => setShowAgentPanel(false)}
                 className="text-xs text-slate-400 hover:text-slate-200"
               >
-                Close
+                ✕
               </button>
             </div>
-
-            <p className="text-xs text-slate-400">
-              Give any plain natural language prompt. The agent will fine-tune the prompt into an analytical specification, pick the optimal chart, and generate runnable code with automated chart extraction.
-            </p>
 
             <div className="flex flex-col md:flex-row gap-2">
               <input
@@ -895,7 +1467,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleRefinePrompt();
                 }}
-                placeholder="e.g. Compare monthly revenue vs expenses across Q1-Q4 with profit margins and outliers"
+                placeholder="Describe your data analysis goal (e.g. Compare monthly revenue vs expenses across Q1-Q4 with profit margins)..."
                 className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
 
@@ -928,7 +1500,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Refined Prompt Result */}
             {refinedPrompt && (
               <div className="bg-slate-950/80 border border-indigo-500/40 rounded-lg p-3 text-xs space-y-2">
                 <div className="flex items-center justify-between text-indigo-300 font-medium">
@@ -1055,6 +1626,15 @@ export default function App() {
 
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setShowDeciderModal(true)}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded bg-emerald-950/40 border border-emerald-500/30 flex items-center gap-1 transition"
+                  title="Describe conditions and let the engine choose Python or JavaScript"
+                >
+                  <Compass className="w-3 h-3" />
+                  <span>Condition Decider</span>
+                </button>
+
+                <button
                   onClick={handleFixCodeWithAi}
                   disabled={fixLoading}
                   className="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1 rounded bg-indigo-950/40 border border-indigo-500/30 flex items-center gap-1 transition"
@@ -1109,7 +1689,7 @@ export default function App() {
             <div className="bg-slate-950/80 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[11px] text-slate-500">
               <span className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                E2B Isolated Sandbox (Ctrl+Enter to Run)
+                E2B Isolated Sandbox ({language.toUpperCase()})
               </span>
               {execDuration !== null && (
                 <span className="font-mono text-slate-400">Execution time: {execDuration}ms</span>
@@ -1118,23 +1698,23 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Column: Output, Extracted Charts & Console (5 cols) */}
+        {/* Right Column: Multi-format Presentation & Outputs (5 cols) */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           {/* Output Card */}
           <div className="flex-1 flex flex-col bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-            {/* Output Tabs */}
+            {/* Top Navigation: Presentation vs Console vs Raw JSON */}
             <div className="bg-slate-950/70 border-b border-slate-800 px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => setActiveTab('chart')}
+                  onClick={() => setActiveTab('presentation')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition ${
-                    activeTab === 'chart'
+                    activeTab === 'presentation'
                       ? 'bg-slate-800 text-indigo-400 border border-slate-700'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   <BarChart3 className="w-3.5 h-3.5" />
-                  Chart Visualizer
+                  Presentation Views
                   {chartData && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>}
                 </button>
 
@@ -1189,44 +1769,134 @@ export default function App() {
               )}
             </div>
 
+            {/* Sub-bar for Multi-Presentation Modes (When in presentation tab) */}
+            {activeTab === 'presentation' && (
+              <div className="bg-slate-950/40 border-b border-slate-800/80 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                {/* 5 Presentation Modes */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPresentationMode('chart')}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition ${
+                      presentationMode === 'chart'
+                        ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <BarChart3 className="w-3 h-3" />
+                    Graphic
+                  </button>
+
+                  <button
+                    onClick={() => setPresentationMode('table')}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition ${
+                      presentationMode === 'table'
+                        ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <TableIcon className="w-3 h-3" />
+                    Matrix Table
+                  </button>
+
+                  <button
+                    onClick={() => setPresentationMode('kpi')}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition ${
+                      presentationMode === 'kpi'
+                        ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <LayoutDashboard className="w-3 h-3" />
+                    KPIs
+                  </button>
+
+                  <button
+                    onClick={() => setPresentationMode('report')}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition ${
+                      presentationMode === 'report'
+                        ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <FileText className="w-3 h-3" />
+                    Narrative
+                  </button>
+
+                  <button
+                    onClick={() => setPresentationMode('story')}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition ${
+                      presentationMode === 'story'
+                        ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Presentation className="w-3 h-3" />
+                    Deck
+                  </button>
+                </div>
+
+                {/* Customization Dropdowns & Toggles */}
+                <div className="flex items-center gap-2">
+                  {/* Palette Selector */}
+                  <select
+                    value={colorPalette}
+                    onChange={(e) => setColorPalette(e.target.value as any)}
+                    className="bg-slate-900 border border-slate-700 text-slate-300 text-[11px] rounded px-1.5 py-0.5 outline-none font-mono"
+                    title="Choose color theme"
+                  >
+                    <option value="indigo">Indigo Modern</option>
+                    <option value="emerald">Emerald Forest</option>
+                    <option value="sunset">Sunset Glow</option>
+                    <option value="neon">Neon Cyber</option>
+                    <option value="monochrome">Monochrome Pro</option>
+                  </select>
+
+                  {/* Orientation Toggle for Bars */}
+                  {chartData?.type === 'bar' && presentationMode === 'chart' && (
+                    <button
+                      onClick={() => setBarOrientation(o => o === 'vertical' ? 'horizontal' : 'vertical')}
+                      className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] text-slate-300 font-mono"
+                      title="Toggle vertical columns vs horizontal bars"
+                    >
+                      {barOrientation === 'vertical' ? 'Vertical' : 'Horizontal'}
+                    </button>
+                  )}
+
+                  {/* Sort Order Toggle */}
+                  <button
+                    onClick={() => setSortOrder(s => s === 'default' ? 'desc' : (s === 'desc' ? 'asc' : 'default'))}
+                    className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-[11px] text-slate-300 flex items-center gap-1 font-mono"
+                    title="Sort elements by magnitude"
+                  >
+                    <ArrowUpDown className="w-3 h-3" />
+                    <span>{sortOrder === 'default' ? 'Sort' : sortOrder.toUpperCase()}</span>
+                  </button>
+
+                  {/* Labels Toggle */}
+                  <button
+                    onClick={() => setShowDataLabels(l => !l)}
+                    className={`p-1 rounded border text-[11px] transition ${
+                      showDataLabels
+                        ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300'
+                        : 'bg-slate-800 border-slate-700 text-slate-500'
+                    }`}
+                    title="Toggle data labels"
+                  >
+                    <Eye className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Output Content Area */}
             <div className="flex-1 p-4 overflow-y-auto max-h-[580px]">
-              {activeTab === 'chart' && (
+              {activeTab === 'presentation' && (
                 <div className="space-y-4">
-                  {renderChart()}
-
-                  {chartData && (
-                    <div className="mt-4 pt-4 border-t border-slate-800">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                          E2B Extractor Metadata
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono">
-                          Type: {chartData.type}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
-                        <div>
-                          <span className="text-slate-500">X-Axis: </span>
-                          <span className="text-slate-300 font-medium">{chartData.x_label || 'None'}</span>
-                          {chartData.x_unit && <span className="text-indigo-400"> ({chartData.x_unit})</span>}
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Y-Axis: </span>
-                          <span className="text-slate-300 font-medium">{chartData.y_label || 'None'}</span>
-                          {chartData.y_unit && <span className="text-indigo-400"> ({chartData.y_unit})</span>}
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Scale: </span>
-                          <span className="text-slate-300 font-mono">{chartData.x_scale || 'linear'} / {chartData.y_scale || 'linear'}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Elements: </span>
-                          <span className="text-slate-300 font-mono">{chartData.elements?.length || 0} items</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  {presentationMode === 'chart' && renderChartGraphic()}
+                  {presentationMode === 'table' && renderDataTable()}
+                  {presentationMode === 'kpi' && renderKpiDashboard()}
+                  {presentationMode === 'report' && renderExecutiveReport()}
+                  {presentationMode === 'story' && renderStoryDeck()}
                 </div>
               )}
 
@@ -1264,6 +1934,120 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {/* Smart Condition & Runtime Decider Modal */}
+      {showDeciderModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Compass className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="text-base font-semibold text-slate-100">
+                    Smart Condition &amp; Runtime Decider
+                  </h3>
+                  <p className="text-xs text-slate-400">Describe your computational conditions and constraints to auto-select JavaScript or Python</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDeciderModal(false)}
+                className="text-slate-400 hover:text-slate-200 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick condition presets */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Example Condition Scenarios:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {CONDITION_PRESETS.map((preset, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setConditionInput(preset.condition);
+                      handleDecideRuntime(preset.condition);
+                    }}
+                    className="text-[11px] px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 transition"
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Input area */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-300">Your Scenario / Requirements:</label>
+              <textarea
+                value={conditionInput}
+                onChange={(e) => setConditionInput(e.target.value)}
+                placeholder="e.g. I need to calculate matrix covariances and plot rolling moving averages with standard deviation..."
+                className="w-full h-24 bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => handleDecideRuntime()}
+                disabled={deciderLoading || !conditionInput.trim()}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
+              >
+                {deciderLoading ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Zap className="w-3.5 h-3.5" />
+                )}
+                Evaluate Condition &amp; Choose Runtime
+              </button>
+            </div>
+
+            {/* Decision Output Card */}
+            {decisionResult && (
+              <div className="bg-slate-950 border border-emerald-500/40 rounded-xl p-4 space-y-3 animate-fadeIn text-xs">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400">Recommended Runtime:</span>
+                    <span className={`font-mono font-bold text-sm uppercase px-2 py-0.5 rounded ${
+                      decisionResult.chosenLanguage === 'python'
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    }`}>
+                      {decisionResult.chosenLanguage}
+                    </span>
+                  </div>
+                  <span className="text-emerald-400 font-mono font-semibold">
+                    {decisionResult.confidence}% Match
+                  </span>
+                </div>
+
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  {decisionResult.reasoning}
+                </p>
+
+                <div className="space-y-1.5 bg-slate-900/60 p-2.5 rounded border border-slate-800 text-[11px]">
+                  <div><strong className="text-slate-400">Data Transformation:</strong> {decisionResult.criteriaAnalysis.dataTransformation}</div>
+                  <div><strong className="text-slate-400">Performance Rationale:</strong> {decisionResult.criteriaAnalysis.computationalPerformance}</div>
+                  <div><strong className="text-slate-400">Ecosystem Fit:</strong> {decisionResult.criteriaAnalysis.ecosystemFit}</div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    Libraries: {decisionResult.recommendedLibraries.join(', ')}
+                  </span>
+                  <button
+                    onClick={handleApplyDecision}
+                    className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs rounded-lg flex items-center gap-1.5 shadow"
+                  >
+                    <span>Apply &amp; Run Script</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Contexts Modal */}
       {showContextModal && (
@@ -1336,70 +2120,6 @@ export default function App() {
                 className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg"
               >
                 Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* API Documentation Modal */}
-      {showApiModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-semibold text-slate-100 flex items-center gap-2">
-                <Code2 className="w-4 h-4 text-emerald-400" />
-                E2B Code Interpreter REST API
-              </h3>
-              <button
-                onClick={() => setShowApiModal(false)}
-                className="text-slate-400 hover:text-slate-200 text-sm"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4 max-h-96 overflow-y-auto text-xs font-mono">
-              <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between text-indigo-400 font-semibold">
-                  <span>POST /execute</span>
-                  <span className="text-slate-500 font-normal">Execute code &amp; stream results</span>
-                </div>
-                <pre className="text-slate-300 text-[11px] overflow-x-auto">
-{`curl -X POST http://localhost:3000/execute \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "code": "var prices = [100, 110]; plot.line({title: \\"Stock\\", elements: [{label: \\"P\\", points: [[1, 100], [2, 110]]}]})",
-    "language": "javascript"
-  }'`}
-                </pre>
-              </div>
-
-              <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between text-emerald-400 font-semibold">
-                  <span>POST /api/chart-extract</span>
-                  <span className="text-slate-500 font-normal">Extract chart features &amp; data points</span>
-                </div>
-                <pre className="text-slate-300 text-[11px] overflow-x-auto">
-{`curl -X POST http://localhost:3000/api/chart-extract \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "type": "bar",
-    "title": "Quarterly Sales",
-    "x_label": "Quarter",
-    "y_label": "Revenue [USD]",
-    "elements": [{"label": "Q1", "value": 100}]
-  }'`}
-                </pre>
-              </div>
-            </div>
-
-            <div className="border-t border-slate-800 pt-3 flex justify-end">
-              <button
-                onClick={() => setShowApiModal(false)}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg"
-              >
-                Close
               </button>
             </div>
           </div>
