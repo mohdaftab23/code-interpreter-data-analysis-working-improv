@@ -1,0 +1,8 @@
+{
+  "name": "Code Interpreter & Data Analysis",
+  "description": "Interactive cloud code execution sandbox and data analysis environment with automated chart data extraction, live context management, and statistical visualization.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
